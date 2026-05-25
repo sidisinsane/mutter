@@ -41,9 +41,14 @@ go.work
 dist/
 
 # === binaries ===
-#mutter
+mutter
+mutter-daemon
 
 # === project specific ===
 __IGNORE__/
+.qwen/
 .treeignore
-#TREE.txt
+TREE.txt
+mutter.yml
+*.md
+!README.md
