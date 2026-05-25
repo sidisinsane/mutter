@@ -1,0 +1,20 @@
+{
+  "schema_version": "0.1.0",
+  "confirmation": false,
+  "confidence_threshold": 0.75,
+  "session": { 
+    "buffer_size": 2 
+  },
+  "model": {
+    "path": "~/.mutter/models/all-MiniLM-L6-v2.onnx",
+    "dimensions": 384
+  },
+  "discovery": {
+    "paths": ["."],
+    "recursive": true
+  },
+  "extensions": {
+    "#": ["sh", "rb", "py", "pl", "r", "jl"],
+    "//": ["js", "ts", "go", "rs", "java", "swift", "kt", "c", "cpp", "cs"]
+  }
+}

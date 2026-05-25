@@ -1,0 +1,106 @@
+syntax = "proto3";
+
+package mutter.v1;
+
+option go_package = "github.com/sidisinsane/mutter/api/proto/v1";
+
+// MutterService provides the API for mutter's natural language script routing.
+service MutterService {
+  // Index discovers and indexes hashfm-annotated scripts in the workspace.
+  rpc Index(IndexRequest) returns (IndexResponse);
+
+  // Route matches a natural language query to the best matching script(s).
+  rpc Route(RouteRequest) returns (RouteResponse);
+
+  // Execute runs a matched script with the provided arguments.
+  rpc Execute(ExecuteRequest) returns (ExecuteResponse);
+
+  // ExecuteStream runs a script and streams the output in real-time.
+  rpc ExecuteStream(ExecuteRequest) returns (stream ExecuteStreamResponse);
+}
+
+// IndexRequest triggers re-indexing of scripts in the workspace.
+message IndexRequest {
+  // force forces a full re-index even if the index is up-to-date.
+  bool force = 1;
+}
+
+// IndexResponse returns the result of the indexing operation.
+message IndexResponse {
+  // scripts_found is the number of hashfm-annotated scripts discovered.
+  int32 scripts_found = 1;
+  // errors is a list of any errors encountered during indexing.
+  repeated string errors = 2;
+}
+
+// RouteRequest matches a natural language query to scripts.
+message RouteRequest {
+  // query is the natural language input from the user.
+  string query = 1;
+  // confidence_threshold overrides the configured threshold for this request.
+  float confidence_threshold = 2;
+}
+
+// RouteResponse returns the best matching script(s) for the query.
+message RouteResponse {
+  // matches is the list of matched scripts, sorted by confidence.
+  repeated RouteMatch matches = 1;
+  // query_normalized is the normalized form of the query (with chain syntax).
+  string query_normalized = 2;
+}
+
+// RouteMatch represents a single routing match.
+message RouteMatch {
+  // script_path is the absolute path to the matched script.
+  string script_path = 1;
+  // script_name is the name of the matched script.
+  string script_name = 2;
+  // description is the script's description from the hashfm block.
+  string description = 3;
+  // confidence is the similarity score (0.0 to 1.0).
+  float confidence = 4;
+  // usage shows how to invoke the script with arguments.
+  string usage = 5;
+}
+
+// ExecuteRequest requests execution of a script.
+message ExecuteRequest {
+  // script_path is the path to the script to execute.
+  string script_path = 1;
+  // arguments maps argument names to values for template rendering.
+  map<string, string> arguments = 2;
+  // execution_id is an optional ID for tracking the execution in the session buffer.
+  string execution_id = 3;
+}
+
+// ExecuteResponse returns the result of script execution.
+message ExecuteResponse {
+  // execution_id is the ID of this execution in the session buffer.
+  string execution_id = 1;
+  // exit_code is the exit code of the script.
+  int32 exit_code = 2;
+  // stdout is the captured standard output.
+  string stdout = 3;
+  // stderr is the captured standard error.
+  string stderr = 4;
+  // error is any execution error (not the same as non-zero exit code).
+  string error = 5;
+}
+
+// ExecuteStreamResponse streams execution output in real-time.
+message ExecuteStreamResponse {
+  // execution_id is the ID of this execution.
+  string execution_id = 1;
+  // output_type indicates whether this is stdout or stderr.
+  enum OutputType {
+    STDOUT = 0;
+    STDERR = 1;
+  }
+  OutputType output_type = 2;
+  // data is the output data chunk.
+  bytes data = 3;
+  // is_complete indicates this is the final message for this execution.
+  bool is_complete = 4;
+  // exit_code is only set in the final message.
+  int32 exit_code = 5;
+}

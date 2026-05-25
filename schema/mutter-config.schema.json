@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/sidisinsane/mutter/main/schema/mutter-config.schema.json",
+  "title": "Mutter Workspace Configuration",
+  "description": "Configuration schema for a mutter workspace. Place this file at the workspace root as mutter.yml, mutter.yaml, or mutter.json. All keys except schema_version are optional — omitting a section uses the application defaults.",
+  "type": "object",
+  "required": ["schema_version"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "title": "Schema Version",
+      "description": "The semantic version of the mutter configuration schema, e.g. '0.1.0'.",
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "confirmation": {
+      "title": "Confirmation",
+      "description": "When true, mutter always presents the planned execution and waits for explicit confirmation before running anything. When false, commands that meet the confidence threshold execute immediately. Commands below the threshold always require confirmation regardless of this setting.",
+      "type": "boolean"
+    },
+    "confidence_threshold": {
+      "title": "Confidence Threshold",
+      "description": "Minimum cosine similarity score (0.0–1.0) required for a routing match to execute without confirmation. Matches below this value always behave as if confirmation is true.",
+      "type": "number",
+      "minimum": 0.0,
+      "maximum": 1.0
+    },
+    "session": {
+      "title": "Session",
+      "description": "Controls the pending execution buffer. The buffer preserves unexecuted execution IDs for recovery — executed commands are never stored.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "buffer_size": {
+          "title": "Buffer Size",
+          "description": "Maximum number of unexecuted execution IDs to preserve. Oldest entry is dropped when the buffer is full. Recommended value is 2.",
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "model": {
+      "title": "Model",
+      "description": "ONNX sentence embedding model used for semantic routing. The model and the compiled index are coupled — swapping models requires reindexing.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "title": "Model Path",
+          "description": "Absolute path to an ONNX sentence embedding model. Overrides the default model. Any model with the same output dimensionality as the default is compatible. Can also be set via the --model-path flag.",
+          "type": "string"
+        },
+        "dimensions": {
+          "title": "Dimensions",
+          "description": "Expected output dimensionality of the embedding model. Validated at startup — a mismatch is a hard error. Must match the model at the configured path.",
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "discovery": {
+      "title": "Discovery",
+      "description": "Controls how mutter locates scripts to index.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "paths": {
+          "title": "Paths",
+          "description": "List of directories to scan for scripts. Paths are resolved relative to the workspace root. Defaults to the current working directory.",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          }
+        },
+        "recursive": {
+          "title": "Recursive",
+          "description": "When true, each path in paths is scanned recursively. When false, only the immediate directory contents are indexed.",
+          "type": "boolean"
+        }
+      }
+    },
+    "extensions": {
+      "title": "Extensions",
+      "description": "Maps comment delimiters to the file extensions that use them. Used by the hashfm parser to locate and extract blocks. Keys must be either '#' or '//'. Values are arrays of file extensions without a leading dot.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "#": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string" }
+        },
+        "//": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string" }
+        }
+      }
+    }
+  }
+}

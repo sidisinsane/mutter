@@ -1,0 +1,45 @@
+# Mirror workflow — runs on every push to main.
+#
+# Maintains a one-way mirror of this repository on Codeberg by pushing the
+# full git history and all refs to the remote. fetch-depth: 0 is required to
+# ensure the complete history is available rather than the default shallow clone.
+#
+# Note: git push --mirror overwrites all refs on the Codeberg remote unconditionally.
+# Any branches or tags that exist only on Codeberg will be deleted.
+#
+# Required GitHub secret:
+#   CODEBERG_TOKEN — Personal Access Token for Codeberg
+#                    Required permission: repository (read and write)
+#
+# Mirror target: https://codeberg.org/sidisinsane/mutter
+
+name: Mirror to Codeberg
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mirror
+  cancel-in-progress: true  # newer push supersedes in-progress mirror on the same branch
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Push mirror to Codeberg
+        run: >-
+          git push
+          --mirror
+          https://sidisinsane:${{ secrets.CODEBERG_TOKEN }}@codeberg.org/sidisinsane/mutter.git

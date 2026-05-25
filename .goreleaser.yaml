@@ -1,0 +1,90 @@
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
+
+version: 2
+
+before:
+  hooks:
+    - go mod tidy
+    - go generate ./internal/schema
+
+builds:
+  - id: mutter
+    main: ./cmd/mutter
+    binary: mutter
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - arm64
+      - amd64
+
+  # mutter-daemon: backend binary — persistent semantic router.
+  # Uncomment when cmd/mutter-daemon is implemented.
+  # - id: mutter-daemon
+  #   main: ./cmd/mutter-daemon
+  #   binary: mutter-daemon
+  #   env:
+  #     - CGO_ENABLED=0
+  #   goos:
+  #     - linux
+  #     - darwin
+  #   goarch:
+  #     - arm64
+  #     - amd64
+
+  # mutter-web: web UI binary.
+  # Uncomment when cmd/mutter-web is implemented.
+  # - id: mutter-web
+  #   main: ./cmd/mutter-web
+  #   binary: mutter-web
+  #   env:
+  #     - CGO_ENABLED=0
+  #   goos:
+  #     - linux
+  #     - darwin
+  #   goarch:
+  #     - arm64
+  #     - amd64
+
+  # mutter-launcher: orchestrator binary — managed startup of full stack.
+  # Uncomment when cmd/mutter-launcher is implemented.
+  # - id: mutter-launcher
+  #   main: ./cmd/mutter-launcher
+  #   binary: mutter-launcher
+  #   env:
+  #     - CGO_ENABLED=0
+  #   goos:
+  #     - linux
+  #     - darwin
+  #   goarch:
+  #     - arm64
+  #     - amd64
+
+archives:
+  - formats: [tar.gz]
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- title .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else }}{{ .Arch }}{{ end }}
+    files:
+      - LICENSE*
+      - README*
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^test:"
+
+release:
+  footer: |-
+    ---
+
+    Released by [GoReleaser](https://github.com/goreleaser/goreleaser).

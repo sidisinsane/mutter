@@ -1,0 +1,49 @@
+# === macos ===
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk
+
+# === vscode ===
+.vscode/*
+!.vscode/extensions.json
+.history/
+*.vsix
+
+# === lefthook ===
+.lefthooklocal
+
+# === go ===
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+coverage.*
+go.work
+
+# === tool outputs ===
+dist/
+
+# === binaries ===
+#mutter
+
+# === project specific ===
+__IGNORE__/
+.treeignore
+#TREE.txt

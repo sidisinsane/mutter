@@ -1,0 +1,105 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/sidisinsane/mutter/main/schema/hashfm-mutter.schema.json",
+  "title": "hashfm-mutter Block",
+  "description": "Schema for script hashfm blocks used by mutter. Extends hashfm-agent with mutter-specific fields (arguments, type). Supports single-command and multi-command forms. name and path are always derived from the filesystem and are never declared in the block.",
+  "oneOf": [
+    { "$ref": "#/definitions/single-command" },
+    { "$ref": "#/definitions/multi-command" }
+  ],
+  "definitions": {
+    "type-category": {
+      "type": "string",
+      "description": "A broad data category used for chain compatibility validation.",
+      "enum": ["video", "audio", "image", "text", "binary"]
+    },
+    "type": {
+      "type": "object",
+      "description": "Declares the data categories this command consumes and produces. Used exclusively for chain validation — format specifics are the script's concern. If present, at least one of input or output must be set.",
+      "additionalProperties": false,
+      "anyOf": [
+        { "required": ["input"] },
+        { "required": ["output"] }
+      ],
+      "properties": {
+        "input": {
+          "type": "array",
+          "description": "Data categories this command accepts as input. A chain is valid when this intersects with the upstream command's output.",
+          "minItems": 1,
+          "items": { "$ref": "#/definitions/type-category" }
+        },
+        "output": {
+          "type": "array",
+          "description": "Data categories this command produces as output. A chain is valid when this intersects with the downstream command's input.",
+          "minItems": 1,
+          "items": { "$ref": "#/definitions/type-category" }
+        }
+      }
+    },
+    "argument": {
+      "type": "object",
+      "description": "Describes a single named argument extracted from user input.",
+      "required": ["pattern"],
+      "additionalProperties": false,
+      "properties": {
+        "pattern": {
+          "type": "string",
+          "description": "A regular expression used to extract this argument's value from the user's natural language prompt.",
+          "format": "regex"
+        },
+        "description": {
+          "type": "string",
+          "description": "A short plain-language description of what this argument represents.",
+          "pattern": "^[^\\n]+$"
+        }
+      }
+    },
+    "command": {
+      "type": "object",
+      "description": "A single command entry — either the whole script or one subcommand within a multi-command script.",
+      "required": ["description", "usage", "exits"],
+      "additionalProperties": true,
+      "properties": {
+        "description": {
+          "type": "string",
+          "description": "A single line describing what this command does. Written in the imperative. No trailing punctuation.",
+          "pattern": "^[^\\n]+$"
+        },
+        "usage": {
+          "type": "string",
+          "description": "A single line showing how to invoke this command. Placeholders are written as {{argument_name}}.",
+          "pattern": "^[^\\n]+$"
+        },
+        "type": {
+          "$ref": "#/definitions/type"
+        },
+        "arguments": {
+          "type": "object",
+          "description": "A map of argument names to argument descriptors. Each key must match a {{placeholder}} in the usage field.",
+          "minProperties": 1,
+          "additionalProperties": { "$ref": "#/definitions/argument" }
+        },
+        "exits": {
+          "type": "object",
+          "description": "A map of exit codes to plain-language descriptions.",
+          "minProperties": 1,
+          "propertyNames": { "pattern": "^[0-9]+$" },
+          "additionalProperties": {
+            "type": "string",
+            "pattern": "^[^\\n]+$"
+          }
+        }
+      }
+    },
+    "single-command": {
+      "description": "A block for a script with a single invocation form.",
+      "$ref": "#/definitions/command"
+    },
+    "multi-command": {
+      "description": "A block for a script that exposes multiple subcommands. A top-level sequence — no wrapper key.",
+      "type": "array",
+      "minItems": 2,
+      "items": { "$ref": "#/definitions/command" }
+    }
+  }
+}

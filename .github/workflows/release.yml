@@ -1,0 +1,61 @@
+# GoReleaser release workflow — triggers on version tag push (v*).
+#
+# Builds, packages, and publishes Go binaries using GoReleaser.
+# Attaches build artifacts to a GitHub release automatically.
+#
+# Expected structure:
+#   .goreleaser.yaml      — GoReleaser configuration (run: goreleaser init)
+#   go.mod                — Go module definition
+#
+# Note: GITHUB_TOKEN is provided automatically by GitHub Actions.
+#       No secret configuration required.
+#
+# Prerequisites:
+#   - Go 1.26.3 (default: 1.26.3)
+
+name: Release Go Package
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: package
+  cancel-in-progress: false # prevent mid-flight deployment leaving release in a broken state
+
+jobs:
+  goreleaser:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0 # required for GoReleaser changelog and tag resolution
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: 1.26.3
+
+      # - name: Run tests
+      #   run: go test ./...
+      #   env:
+      #     GOPROXY: "https://proxy.golang.org,direct"
+
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v7
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: release --clean --skip=validate
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Ensure brand new public repositories can be resolved immediately
+          GOPROXY: "https://proxy.golang.org,direct"

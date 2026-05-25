@@ -1,0 +1,48 @@
+# CI workflow — triggers on push and pull requests to main.
+#
+# Verifies module hygiene and tests the codebase.
+# Must pass before tagging a release.
+#
+# Expected structure:
+#   go.mod                — Go module definition
+#   go.sum                — Go module checksums
+#
+# Prerequisites:
+#   - Go 1.26.3 (default: 1.26.3)
+
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci
+  cancel-in-progress: true # newer push supersedes in-progress ci on the same branch
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: 1.26.3
+
+      - name: Verify go mod tidy
+        run: go mod tidy && git diff --exit-code go.mod go.sum
+
+      # - name: Run tests
+      #   run: go test ./...

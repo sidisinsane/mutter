@@ -1,0 +1,20 @@
+# Dependabot configuration for automated gomod dependency updates.
+#
+# Opens a single grouped pull request per week covering all development
+# dependencies. Security updates are handled separately by Dependabot
+# and bypass this schedule — they are always immediate.
+#
+# Note: Place directly under `.github` not `.github/workflows`!
+#
+# See: https://docs.github.com/en/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: "/"
+    schedule:
+      interval: weekly
+    groups:
+      dev-dependencies:
+        dependency-type: development
+    open-pull-requests-limit: 1
