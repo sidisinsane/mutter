@@ -1,0 +1,63 @@
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
+# macOS release configuration — used by the release-macos CI job.
+# Builds darwin/amd64 and darwin/arm64 natively on macos-latest.
+
+version: 2
+
+before:
+  hooks:
+    - go mod tidy
+    - go generate ./internal/schema
+
+builds:
+  - id: mutter-daemon
+    main: ./cmd/mutter-daemon
+    binary: mutter-daemon
+    env:
+      - CGO_ENABLED=1
+    goos:
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+
+  # mutter: TUI binary — primary end-user experience.
+  # Uncomment when cmd/mutter is implemented.
+  # - id: mutter
+  #   main: ./cmd/mutter
+  #   binary: mutter
+  #   env:
+  #     - CGO_ENABLED=0
+  #   goos:
+  #     - darwin
+  #   goarch:
+  #     - arm64
+  #     - amd64
+
+archives:
+  - formats: [tar.gz]
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- title .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else }}{{ .Arch }}{{ end }}
+    files:
+      - LICENSE*
+      - README*
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^test:"
+
+release:
+  replace_existing_artifacts: true
+  footer: |-
+    ---
+
+    Released by [GoReleaser](https://github.com/goreleaser/goreleaser).

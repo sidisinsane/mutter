@@ -1,0 +1,69 @@
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
+# Linux release configuration — used by the release-linux CI job.
+# Builds linux/amd64 (native) and linux/arm64 (via gcc-aarch64-linux-gnu).
+
+version: 2
+
+before:
+  hooks:
+    - go mod tidy
+    - go generate ./internal/schema
+
+builds:
+  - id: mutter-daemon
+    main: ./cmd/mutter-daemon
+    binary: mutter-daemon
+    env:
+      - CGO_ENABLED=1
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    overrides:
+      - goos: linux
+        goarch: arm64
+        env:
+          - CGO_ENABLED=1
+          - CC=aarch64-linux-gnu-gcc
+
+  # mutter: TUI binary — primary end-user experience.
+  # Uncomment when cmd/mutter is implemented.
+  # - id: mutter
+  #   main: ./cmd/mutter
+  #   binary: mutter
+  #   env:
+  #     - CGO_ENABLED=0
+  #   goos:
+  #     - linux
+  #   goarch:
+  #     - arm64
+  #     - amd64
+
+archives:
+  - formats: [tar.gz]
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- title .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else }}{{ .Arch }}{{ end }}
+    files:
+      - LICENSE*
+      - README*
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^test:"
+
+release:
+  replace_existing_artifacts: true
+  footer: |-
+    ---
+
+    Released by [GoReleaser](https://github.com/goreleaser/goreleaser).

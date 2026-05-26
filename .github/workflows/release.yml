@@ -1,11 +1,11 @@
 # GoReleaser release workflow — triggers on version tag push (v*).
 #
 # CGO_ENABLED=1 is required by onnxruntime_go and prevents cross-compilation.
-# Each OS builds natively on its own runner. GGOOS filters which targets each
-# runner builds without affecting hooks or other build steps.
+# Each OS builds natively on its own runner using a platform-specific
+# GoReleaser config file.
 #
-# Linux arm64 cross-compilation uses gcc-aarch64-linux-gnu, available on
-# ubuntu-latest via apt. macOS builds natively for both amd64 and arm64.
+# Linux arm64 uses gcc-aarch64-linux-gnu for cross-compilation within
+# the ubuntu-latest runner.
 #
 # CI (ci.yml) must pass before tagging — tests are not repeated here.
 
@@ -48,11 +48,10 @@ jobs:
         with:
           distribution: goreleaser
           version: "~> v2"
-          args: release --clean --skip=announce
+          args: release --clean --config .goreleaser.linux.yaml --skip=announce
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GOPROXY: "https://proxy.golang.org,direct"
-          GGOOS: linux
 
   release-macos:
     runs-on: macos-latest
@@ -76,8 +75,7 @@ jobs:
         with:
           distribution: goreleaser
           version: "~> v2"
-          args: release --skip=validate --skip=announce
+          args: release --config .goreleaser.darwin.yaml --skip=validate --skip=announce
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GOPROXY: "https://proxy.golang.org,direct"
-          GGOOS: darwin
