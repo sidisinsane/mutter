@@ -1,7 +1,7 @@
 // Command mutter-daemon is the backend binary for mutter.
 // It provides the indexer, router, session management, and HTTP/JSON API server.
 //
-// After running `go generate ./api/...`, rebuild with -tags connectrpc to
+// After running `go generate ./tools/...`, rebuild with -tags connectrpc to
 // switch to the full ConnectRPC API with streaming support.
 package main
 
@@ -79,6 +79,13 @@ func main() {
 	}
 }
 
+// jsonError writes a JSON-encoded error response with the given status code.
+func jsonError(w http.ResponseWriter, message string, code int) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	json.NewEncoder(w).Encode(map[string]any{"error": message})
+}
+
 // reindex rebuilds the script index from the configured discovery paths.
 func (s *Server) reindex() error {
 	log.Printf("building index — workspace: %s paths: %v recursive: %v",
@@ -112,11 +119,11 @@ func (s *Server) reindex() error {
 // handleIndex handles POST /api/index — triggers a full re-index.
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		jsonError(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	if err := s.reindex(); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		jsonError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -129,14 +136,14 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 // handleRoute handles POST /api/route — matches a query to indexed scripts.
 func (s *Server) handleRoute(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		jsonError(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	var req struct {
 		Query string `json:"query"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request", http.StatusBadRequest)
+		jsonError(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
 
@@ -163,7 +170,7 @@ func (s *Server) handleRoute(w http.ResponseWriter, r *http.Request) {
 // handleExecute handles POST /api/execute — runs a script by path.
 func (s *Server) handleExecute(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		jsonError(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	var req struct {
@@ -172,7 +179,7 @@ func (s *Server) handleExecute(w http.ResponseWriter, r *http.Request) {
 		Chain      []string          `json:"chain"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request", http.StatusBadRequest)
+		jsonError(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
 
@@ -195,14 +202,14 @@ func (s *Server) handleExecute(w http.ResponseWriter, r *http.Request) {
 // handleQuery handles POST /api/query — routes a natural language prompt and executes.
 func (s *Server) handleQuery(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		jsonError(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	var req struct {
 		Query string `json:"query"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request", http.StatusBadRequest)
+		jsonError(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
 

@@ -91,7 +91,12 @@ func NewONNXEmbedder(modelPath, libraryPath string, expectedDims int) (*ONNXEmbe
 	}, nil
 }
 
-// Embed generates an L2-normalised embedding vector for the given text.
+// Embed generates an L2-normalised embedding vector for the given text using
+// the all-MiniLM-L6-v2 ONNX model.
+//
+// The model accepts input_ids, attention_mask, and token_type_ids and outputs
+// last_hidden_state [batch, seq, 384]. We mean pool over the sequence
+// dimension (weighted by attention_mask) and L2-normalise the result.
 func (e *ONNXEmbedder) Embed(_ context.Context, text string) ([]float32, error) {
 	inputIDs, attentionMask, tokenTypeIDs, err := e.tokenize(text)
 	if err != nil {
@@ -118,6 +123,7 @@ func (e *ONNXEmbedder) Embed(_ context.Context, text string) ([]float32, error) 
 	}
 	defer tokenTypeIDsTensor.Destroy()
 
+	// last_hidden_state: [1, seqLen, dimensions]
 	outputData := make([]float32, seqLen*int64(e.dimensions))
 	outputTensor, err := ort.NewTensor(ort.NewShape(1, seqLen, int64(e.dimensions)), outputData)
 	if err != nil {

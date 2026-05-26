@@ -37,16 +37,21 @@ func New(capacity int) *Session {
 		capacity = 2 // Default capacity
 	}
 	return &Session{
-		buffer:  make([]*Execution, 0, capacity),
+		buffer:   make([]*Execution, 0, capacity),
 		capacity: capacity,
 	}
 }
 
-// Add adds a new execution to the buffer. If the buffer is full,
+// Add adds a new execution to the buffer and returns it. If id is empty a
+// unique ID is generated from the current timestamp. If the buffer is full,
 // the oldest entry is dropped (FIFO).
 func (s *Session) Add(id string) *Execution {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	if id == "" {
+		id = fmt.Sprintf("exec-%d", time.Now().UnixNano())
+	}
 
 	exec := &Execution{
 		ID:        id,
@@ -54,7 +59,6 @@ func (s *Session) Add(id string) *Execution {
 		Executed:  false,
 	}
 
-	// If buffer is full, remove the oldest entry
 	if len(s.buffer) >= s.capacity {
 		s.buffer = s.buffer[1:]
 	}
@@ -77,14 +81,13 @@ func (s *Session) Get(id string) (*Execution, error) {
 	return nil, fmt.Errorf("execution %s not found in buffer", id)
 }
 
-// MarkExecuted marks an execution as executed and removes it from the buffer.
+// MarkExecuted removes an execution from the buffer by ID.
 func (s *Session) MarkExecuted(id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	for i, exec := range s.buffer {
 		if exec.ID == id {
-			// Remove from buffer
 			s.buffer = append(s.buffer[:i], s.buffer[i+1:]...)
 			return nil
 		}
