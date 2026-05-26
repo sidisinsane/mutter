@@ -44,5 +44,27 @@ jobs:
       - name: Verify go mod tidy
         run: go mod tidy && git diff --exit-code go.mod go.sum
 
+      - name: Install onnxruntime shared library
+        run: |
+          mkdir -p ~/.mutter/lib
+          curl -L https://github.com/microsoft/onnxruntime/releases/download/v1.25.0/onnxruntime-linux-x64-1.25.0.tgz \
+            | tar -xz -C /tmp
+          cp /tmp/onnxruntime-linux-x64-1.25.0/lib/libonnxruntime.so.1.25.0 ~/.mutter/lib/
+
+      - name: Create workspace config
+        run: |
+          cat > mutter.yml << 'YAML'
+          schema_version: "0.1.0"
+          model:
+            library_path: ~/.mutter/lib/libonnxruntime.so.1.25.0
+          discovery:
+            paths:
+              - examples
+            recursive: false
+          YAML
+
+      - name: Build
+        run: go build ./...
+
       - name: Run tests
         run: go test ./...
