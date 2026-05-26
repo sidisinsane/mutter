@@ -3,9 +3,9 @@
 # Builds, packages, and publishes Go binaries using GoReleaser.
 # Attaches build artifacts to a GitHub release automatically.
 #
-# Expected structure:
-#   .goreleaser.yaml      — GoReleaser configuration (run: goreleaser init)
-#   go.mod                — Go module definition
+# CI (ci.yml) must pass before tagging a release — tests are not
+# repeated here. The onnxruntime shared library is installed for
+# linking only (CGO_ENABLED=1 required by onnxruntime_go).
 #
 # Note: GITHUB_TOKEN is provided automatically by GitHub Actions.
 #       No secret configuration required.
@@ -13,7 +13,7 @@
 # Prerequisites:
 #   - Go 1.26.3 (default: 1.26.3)
 
-name: Release Go Package
+name: Release
 
 on:
   push:
@@ -24,15 +24,15 @@ permissions:
   contents: read
 
 concurrency:
-  group: package
-  cancel-in-progress: false # prevent mid-flight deployment leaving release in a broken state
+  group: release
+  cancel-in-progress: false # prevent mid-flight release leaving artifacts in a broken state
 
 jobs:
   goreleaser:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    
+
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -44,18 +44,21 @@ jobs:
         with:
           go-version: 1.26.3
 
-      - name: Run tests
-        run: go test ./...
-        env:
-          GOPROXY: "https://proxy.golang.org,direct"
+      - name: Install onnxruntime shared library
+        run: |
+          mkdir -p ~/.mutter/lib
+          curl -L https://github.com/microsoft/onnxruntime/releases/download/v1.25.0/onnxruntime-linux-x64-1.25.0.tgz \
+            | tar -xz -C /tmp
+          cp /tmp/onnxruntime-linux-x64-1.25.0/lib/libonnxruntime.so.1.25.0 ~/.mutter/lib/
+          echo "CGO_LDFLAGS=-L$HOME/.mutter/lib" >> "$GITHUB_ENV"
+          echo "LD_LIBRARY_PATH=$HOME/.mutter/lib" >> "$GITHUB_ENV"
 
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v7
         with:
           distribution: goreleaser
           version: "~> v2"
-          args: release --clean --skip=validate
+          args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Ensure brand new public repositories can be resolved immediately
           GOPROXY: "https://proxy.golang.org,direct"

@@ -15,10 +15,10 @@ GITHUB_REPO="mutter"
 BINARY_NAME="mutter"
 
 # Binaries bundled in the release archive.
-# Add mutter-daemon, mutter-web, and mutter-launcher here as they are released.
+# Uncomment each entry as the corresponding binary is added to .goreleaser.yaml.
 BINARIES=(
-  "mutter"
-  # "mutter-daemon"
+  # "mutter"
+  "mutter-daemon"
   # "mutter-web"
   # "mutter-launcher"
 )

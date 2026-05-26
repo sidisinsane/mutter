@@ -25,8 +25,7 @@ curl -OL https://github.com/sidisinsane/mutter/releases/latest/download/checksum
 shasum -a 256 --check --ignore-missing checksums.txt
 
 # Extract and install
-tar -xzf mutter_Darwin_arm64.tar.gz
-mv mutter ~/.mutter/
+tar -xzf mutter_Darwin_arm64.tar.gz -C ~/.mutter/
 ```
 
 **Build from source:**

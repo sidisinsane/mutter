@@ -8,23 +8,26 @@ before:
     - go generate ./internal/schema
 
 builds:
-  - id: mutter
-    main: ./cmd/mutter
-    binary: mutter
+  # mutter-daemon: backend binary — persistent semantic router.
+  # CGO_ENABLED=1 required — onnxruntime_go uses CGo.
+  # Cross-compilation note: CGo cross-compilation requires platform-specific
+  # runners. Add macOS arm64 via a separate macOS runner when needed.
+  - id: mutter-daemon
+    main: ./cmd/mutter-daemon
+    binary: mutter-daemon
     env:
-      - CGO_ENABLED=0
+      - CGO_ENABLED=1
     goos:
       - linux
       - darwin
     goarch:
-      - arm64
       - amd64
 
-  # mutter-daemon: backend binary — persistent semantic router.
-  # Uncomment when cmd/mutter-daemon is implemented.
-  # - id: mutter-daemon
-  #   main: ./cmd/mutter-daemon
-  #   binary: mutter-daemon
+  # mutter: TUI binary — primary end-user experience.
+  # Uncomment when cmd/mutter is implemented.
+  # - id: mutter
+  #   main: ./cmd/mutter
+  #   binary: mutter
   #   env:
   #     - CGO_ENABLED=0
   #   goos:
