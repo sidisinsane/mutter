@@ -1,17 +1,14 @@
 # GoReleaser release workflow — triggers on version tag push (v*).
 #
-# Builds, packages, and publishes Go binaries using GoReleaser.
-# Attaches build artifacts to a GitHub release automatically.
+# Uses a matrix of native runners — one per OS — because CGO_ENABLED=1
+# (required by onnxruntime_go) prevents cross-compilation. Each runner
+# builds only for its own OS. GoReleaser's split/merge mode combines
+# the artifacts into a single GitHub release.
 #
-# CI (ci.yml) must pass before tagging a release — tests are not
-# repeated here. The onnxruntime shared library is installed for
-# linking only (CGO_ENABLED=1 required by onnxruntime_go).
+# The onnxruntime shared library is NOT needed on the build host —
+# it is loaded at runtime on the user's machine on first run.
 #
-# Note: GITHUB_TOKEN is provided automatically by GitHub Actions.
-#       No secret configuration required.
-#
-# Prerequisites:
-#   - Go 1.26.3 (default: 1.26.3)
+# CI (ci.yml) must pass before tagging — tests are not repeated here.
 
 name: Release
 
@@ -25,10 +22,42 @@ permissions:
 
 concurrency:
   group: release
-  cancel-in-progress: false # prevent mid-flight release leaving artifacts in a broken state
+  cancel-in-progress: false
 
 jobs:
-  goreleaser:
+  build:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: 1.26.3
+
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v7
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: release --clean --split
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GOPROXY: "https://proxy.golang.org,direct"
+          GORELEASER_CURRENT_TAG: ${{ github.ref_name }}
+
+  merge:
+    needs: build
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -37,28 +66,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
         with:
-          fetch-depth: 0 # required for GoReleaser changelog and tag resolution
+          fetch-depth: 0
 
-      - name: Set up Go
-        uses: actions/setup-go@v6
-        with:
-          go-version: 1.26.3
-
-      - name: Install onnxruntime shared library
-        run: |
-          mkdir -p ~/.mutter/lib
-          curl -L https://github.com/microsoft/onnxruntime/releases/download/v1.25.0/onnxruntime-linux-x64-1.25.0.tgz \
-            | tar -xz -C /tmp
-          cp /tmp/onnxruntime-linux-x64-1.25.0/lib/libonnxruntime.so.1.25.0 ~/.mutter/lib/
-          echo "CGO_LDFLAGS=-L$HOME/.mutter/lib" >> "$GITHUB_ENV"
-          echo "LD_LIBRARY_PATH=$HOME/.mutter/lib" >> "$GITHUB_ENV"
-
-      - name: Run GoReleaser
+      - name: Merge and publish release
         uses: goreleaser/goreleaser-action@v7
         with:
           distribution: goreleaser
           version: "~> v2"
-          args: release --clean
+          args: continue --merge
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GOPROXY: "https://proxy.golang.org,direct"
+          GORELEASER_CURRENT_TAG: ${{ github.ref_name }}
