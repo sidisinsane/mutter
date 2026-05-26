@@ -1,6 +1,6 @@
 module github.com/sidisinsane/mutter
 
-go 1.26
+go 1.26.3
 
 require (
 	connectrpc.com/connect v1.20.0
