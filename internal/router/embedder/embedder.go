@@ -20,13 +20,17 @@ type Embedder interface {
 type Config struct {
 	// ModelPath is the absolute path to the ONNX model file.
 	ModelPath string
+	// LibraryPath is the absolute path to the onnxruntime shared library.
+	// Required on all platforms — the library is not searched automatically.
+	// On macOS: libonnxruntime.1.20.0.dylib
+	// On Linux: libonnxruntime.so.1.20.0
+	LibraryPath string
 	// ExpectedDimensions is the expected output dimensionality.
 	// Validated at startup; mismatch is a hard error.
 	ExpectedDimensions int
 }
 
 // New creates a new Embedder based on the configuration.
-// Currently supports ONNX sentence transformer models.
 func New(cfg Config) (Embedder, error) {
-	return NewONNXEmbedder(cfg.ModelPath, cfg.ExpectedDimensions)
+	return NewONNXEmbedder(cfg.ModelPath, cfg.LibraryPath, cfg.ExpectedDimensions)
 }

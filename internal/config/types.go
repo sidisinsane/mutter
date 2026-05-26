@@ -11,6 +11,8 @@
 // being returned as a [Config].
 package config
 
+import "os"
+
 // Config holds the fully merged and validated mutter workspace configuration.
 type Config struct {
 	// SchemaVersion is the semver string declared in the config file, e.g. "0.1.0".
@@ -39,6 +41,11 @@ type Config struct {
 	// Valid keys are "#" and "//". Values are slices of extensions without a
 	// leading dot, e.g. ["sh", "rb", "py"].
 	Extensions map[string][]string
+
+	// ShellPath is the absolute path to the shell used to execute scripts.
+	// Defaults to the SHELL environment variable, falling back to /bin/sh.
+	// Can be overridden via the --shell flag.
+	ShellPath string
 
 	// WorkspaceRoot is the absolute path of the directory from which mutter
 	// was invoked. It is derived at runtime and never read from the config file.
@@ -72,6 +79,11 @@ type ModelConfig struct {
 	// Dimensions is the expected output dimensionality of the embedding model.
 	// Validated at startup; a mismatch is a hard error.
 	Dimensions int
+
+	// LibraryPath is the absolute path to the onnxruntime shared library
+	// (.dylib on macOS, .so on Linux). Must be set to the version matching
+	// onnxruntime_go — currently v1.20.0.
+	LibraryPath string
 }
 
 // DiscoveryConfig holds configuration for script discovery.
@@ -89,4 +101,17 @@ type DiscoveryConfig struct {
 // committed to version control.
 func (c *Config) MutterDir() string {
 	return c.mutterDir
+}
+
+// Shell returns the shell executable to use for script execution. It returns
+// ShellPath if set, otherwise falls back to the SHELL environment variable,
+// and finally to /bin/sh if neither is available.
+func (c *Config) Shell() string {
+	if c.ShellPath != "" {
+		return c.ShellPath
+	}
+	if shell := os.Getenv("SHELL"); shell != "" {
+		return shell
+	}
+	return "/bin/sh"
 }

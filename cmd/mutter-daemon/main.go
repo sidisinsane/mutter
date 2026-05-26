@@ -1,5 +1,8 @@
 // Command mutter-daemon is the backend binary for mutter.
-// It provides the indexer, router, session management, and API server.
+// It provides the indexer, router, session management, and HTTP/JSON API server.
+//
+// After running `go generate ./api/...`, rebuild with -tags connectrpc to
+// switch to the full ConnectRPC API with streaming support.
 package main
 
 import (
@@ -22,18 +25,16 @@ import (
 
 // Server holds the daemon's state and dependencies.
 type Server struct {
-	cfg        *config.Config
-	index      *indexer.Index
-	session    *session.Session
-	normalizer *normalizer.Normalizer
-	embedder   embedder.Embedder
-	matcher    *matcher.Matcher
-	// scriptPaths stores indexed script paths for matching
+	cfg         *config.Config
+	index       *indexer.Index
+	session     *session.Session
+	normalizer  *normalizer.Normalizer
+	emb         embedder.Embedder
+	matcher     *matcher.Matcher
 	scriptPaths []string
 }
 
 func main() {
-	// Load configuration
 	workspaceRoot, err := os.Getwd()
 	if err != nil {
 		log.Fatalf("get working directory: %v", err)
@@ -44,107 +45,93 @@ func main() {
 		log.Fatalf("load config: %v", err)
 	}
 
-	// Create embedder
 	emb, err := embedder.New(embedder.Config{
-		ModelPath:           cfg.Model.Path,
+		ModelPath:          cfg.Model.Path,
+		LibraryPath:        cfg.Model.LibraryPath,
 		ExpectedDimensions: cfg.Model.Dimensions,
 	})
 	if err != nil {
-		log.Printf("warning: failed to create embedder: %v (using keyword matching)", err)
+		log.Fatalf("failed to create embedder: %v", err)
 	}
 
-	// Create matcher
-	mat := matcher.New(cfg.ConfidenceThreshold)
-
-	// Create server
 	srv := &Server{
 		cfg:        cfg,
 		session:    session.New(cfg.Session.BufferSize),
 		normalizer: normalizer.New(),
-		embedder:   emb,
-		matcher:    mat,
+		emb:        emb,
+		matcher:    matcher.New(cfg.ConfidenceThreshold),
 	}
 
-	// Build initial index (with embeddings if embedder is available)
 	if err := srv.reindex(); err != nil {
 		log.Printf("initial index: %v", err)
 	}
 
-	// Set up routes
-	http.HandleFunc("/api/index", srv.handleIndex)
-	http.HandleFunc("/api/route", srv.handleRoute)
-	http.HandleFunc("/api/execute", srv.handleExecute)
-	http.HandleFunc("/api/query", srv.handleQuery)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/index", srv.handleIndex)
+	mux.HandleFunc("/api/route", srv.handleRoute)
+	mux.HandleFunc("/api/execute", srv.handleExecute)
+	mux.HandleFunc("/api/query", srv.handleQuery)
 
-	// Start server
 	addr := ":8080"
 	log.Printf("mutter-daemon starting on %s", addr)
-	if err := http.ListenAndServe(addr, nil); err != nil {
+	if err := http.ListenAndServe(addr, mux); err != nil {
 		log.Fatalf("server: %v", err)
 	}
 }
 
-// reindex rebuilds the script index.
+// reindex rebuilds the script index from the configured discovery paths.
 func (s *Server) reindex() error {
-	log.Printf("building index with workspace root: %s", s.cfg.WorkspaceRoot)
-	log.Printf("discovery paths: %v", s.cfg.Discovery.Paths)
-	log.Printf("discovery recursive: %v", s.cfg.Discovery.Recursive)
+	log.Printf("building index — workspace: %s paths: %v recursive: %v",
+		s.cfg.WorkspaceRoot, s.cfg.Discovery.Paths, s.cfg.Discovery.Recursive)
 
-	// Use embedder if available
-	var idx *indexer.Index
-	var err error
-
-	if s.embedder != nil {
+	var (
+		idx *indexer.Index
+		err error
+	)
+	if s.emb != nil {
 		log.Printf("building index with embeddings")
-		idx, err = indexer.BuildWithEmbedder(s.cfg, s.embedder)
+		idx, err = indexer.BuildWithEmbedder(s.cfg, s.emb)
 	} else {
 		log.Printf("building index without embeddings (keyword matching only)")
 		idx, err = indexer.Build(s.cfg)
 	}
-
 	if err != nil {
 		return fmt.Errorf("build index: %w", err)
 	}
-	s.index = idx
 
-	// Store script paths for matching
+	s.index = idx
 	s.scriptPaths = make([]string, 0, len(idx.Entries))
 	for path := range idx.Entries {
 		s.scriptPaths = append(s.scriptPaths, path)
-		log.Printf("indexed script: %s", path)
+		log.Printf("indexed: %s", path)
 	}
-
 	log.Printf("indexed %d scripts total", len(idx.Entries))
 	return nil
 }
 
-// handleIndex handles POST /api/index requests.
+// handleIndex handles POST /api/index — triggers a full re-index.
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-
 	if err := s.reindex(); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-
-	resp := map[string]any{
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{
 		"scripts_found": len(s.index.Entries),
 		"errors":        []string{},
-	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	})
 }
 
-// handleRoute handles POST /api/route requests.
+// handleRoute handles POST /api/route — matches a query to indexed scripts.
 func (s *Server) handleRoute(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-
 	var req struct {
 		Query string `json:"query"`
 	}
@@ -153,229 +140,64 @@ func (s *Server) handleRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Normalize query for chains
 	normalized, hasChain := s.normalizer.Normalize(req.Query)
-
-	// Simple keyword matching for now
 	matches := s.findMatches(req.Query)
 
 	resp := map[string]any{
 		"query_normalized": normalized,
 		"has_chain":        hasChain,
-		"matches":          matches,
+		"matches":          toMatchMaps(matches),
 	}
-
-	// If it's a chain, also return the individual commands
 	if hasChain {
-		commands := strings.Split(normalized, "|")
-		for i := range commands {
-			commands[i] = strings.TrimSpace(commands[i])
+		parts := strings.Split(normalized, "|")
+		for i := range parts {
+			parts[i] = strings.TrimSpace(parts[i])
 		}
-		resp["chain_commands"] = commands
+		resp["chain_commands"] = parts
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
 }
 
-// findMatches performs matching on script descriptions using either semantic
-// embeddings (if available) or keyword matching.
-func (s *Server) findMatches(query string) []map[string]any {
-	// Use semantic matching if embedder and matcher are available
-	if s.embedder != nil && s.matcher != nil {
-		return s.findMatchesSemantic(query)
-	}
-
-	// Fall back to keyword matching
-	return s.findMatchesKeyword(query)
-}
-
-// findMatchesKeyword performs simple keyword-based matching on script descriptions.
-func (s *Server) findMatchesKeyword(query string) []map[string]any {
-	var matches []map[string]any
-	queryLower := strings.ToLower(query)
-
-	for _, path := range s.scriptPaths {
-		entry, ok := s.index.Entries[path]
-		if !ok || len(entry.Block.Commands) == 0 {
-			continue
-		}
-
-		cmd := entry.Block.Commands[0]
-		descLower := strings.ToLower(cmd.Description)
-
-		// Check if query keywords appear in description
-		if strings.Contains(descLower, queryLower) {
-			matches = append(matches, map[string]any{
-				"script_path": path,
-				"script_name": entry.Block.Name,
-				"description": cmd.Description,
-				"confidence":  0.9,
-				"usage":       cmd.Usage,
-			})
-		}
-	}
-
-	return matches
-}
-
-// findMatchesSemantic performs semantic matching using embeddings and cosine similarity.
-func (s *Server) findMatchesSemantic(query string) []map[string]any {
-	ctx := context.Background()
-
-	// Generate embedding for the query
-	queryEmbedding, err := s.embedder.Embed(ctx, query)
-	if err != nil {
-		log.Printf("failed to embed query: %v", err)
-		return s.findMatchesKeyword(query) // Fall back to keyword matching
-	}
-
-	// Collect embeddings from indexed scripts
-	var candidates [][]float32
-	var scriptPaths []string
-
-	for path, entry := range s.index.Entries {
-		if entry.Embedding != nil {
-			candidates = append(candidates, entry.Embedding)
-			scriptPaths = append(scriptPaths, path)
-		}
-	}
-
-	if len(candidates) == 0 {
-		return s.findMatchesKeyword(query) // No embeddings available
-	}
-
-	// Find matches using the matcher
-	matcherResults := s.matcher.FindAll(queryEmbedding, candidates)
-
-	// Convert to response format
-	var matches []map[string]any
-	for _, result := range matcherResults {
-		path := scriptPaths[result.Index]
-		entry := s.index.Entries[path]
-		if len(entry.Block.Commands) == 0 {
-			continue
-		}
-
-		cmd := entry.Block.Commands[0]
-		matches = append(matches, map[string]any{
-			"script_path": path,
-			"script_name": entry.Block.Name,
-			"description": cmd.Description,
-			"confidence":  result.Score,
-			"usage":       cmd.Usage,
-		})
-	}
-
-	return matches
-}
-
-// handleExecute handles POST /api/execute requests.
+// handleExecute handles POST /api/execute — runs a script by path.
 func (s *Server) handleExecute(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-
 	var req struct {
 		ScriptPath string            `json:"script_path"`
 		Arguments  map[string]string `json:"arguments"`
-		Chain      []string          `json:"chain"` // For chained execution
+		Chain      []string          `json:"chain"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid request", http.StatusBadRequest)
 		return
 	}
 
-	// Generate execution ID
-	execID := fmt.Sprintf("exec-%d", os.Getpid())
+	execID := s.session.Add("").ID
 
-	// Handle chained execution
 	if len(req.Chain) > 0 {
 		s.executeChain(w, execID, req.Chain)
 		return
 	}
 
-	// Execute single script
-	cmd := exec.Command("bash", req.ScriptPath)
-	if len(req.Arguments) > 0 {
-		// TODO: Render script with arguments
-	}
-
-	output, err := cmd.CombinedOutput()
-
-	resp := map[string]any{
-		"execution_id": execID,
-		"exit_code":    cmd.ProcessState.ExitCode(),
-		"stdout":       string(output),
-		"stderr":       "",
-		"error":        "",
-	}
-
-	if err != nil {
-		resp["error"] = err.Error()
+	result := s.executeScript(execID, req.ScriptPath)
+	if err := s.session.MarkExecuted(execID); err != nil {
+		log.Printf("mark executed: %v", err)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	json.NewEncoder(w).Encode(result)
 }
 
-// executeChain executes a chain of scripts in sequence.
-func (s *Server) executeChain(w http.ResponseWriter, execID string, chain []string) {
-	var results []map[string]any
-	var finalOutput string
-
-	for i, scriptPath := range chain {
-		cmd := exec.Command("bash", scriptPath)
-
-		// Pipe previous output if available
-		if i > 0 && finalOutput != "" {
-			cmd.Stdin = strings.NewReader(finalOutput)
-		}
-
-		output, err := cmd.CombinedOutput()
-		exitCode := 0
-		if cmd.ProcessState != nil {
-			exitCode = cmd.ProcessState.ExitCode()
-		}
-
-		result := map[string]any{
-			"script_path": scriptPath,
-			"exit_code":   exitCode,
-			"stdout":      string(output),
-		}
-
-		if err != nil {
-			result["error"] = err.Error()
-		}
-
-		results = append(results, result)
-		finalOutput = string(output)
-
-		// Stop chain on error
-		if err != nil {
-			break
-		}
-	}
-
-	resp := map[string]any{
-		"execution_id": execID,
-		"chain":        results,
-		"final_output": finalOutput,
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
-}
-
-// handleQuery handles POST /api/query requests.
-// This is the main endpoint for natural language queries that routes and executes.
+// handleQuery handles POST /api/query — routes a natural language prompt and executes.
 func (s *Server) handleQuery(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-
 	var req struct {
 		Query string `json:"query"`
 	}
@@ -384,37 +206,211 @@ func (s *Server) handleQuery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Generate execution ID
-	execID := fmt.Sprintf("exec-%d", os.Getpid())
-
-	// Normalize query for chains
+	execID := s.session.Add("").ID
 	normalized, hasChain := s.normalizer.Normalize(req.Query)
 
 	var chain []string
 	if hasChain {
-		// Split by pipe to get individual commands
-		parts := strings.Split(normalized, "|")
-		for _, part := range parts {
+		for _, part := range strings.Split(normalized, "|") {
 			part = strings.TrimSpace(part)
-			// Find matching script for this part
-			matches := s.findMatches(part)
-			if len(matches) > 0 {
-				chain = append(chain, matches[0]["script_path"].(string))
+			if matches := s.findMatches(part); len(matches) > 0 {
+				chain = append(chain, matches[0].scriptPath)
 			}
 		}
 	} else {
-		// Single command
-		matches := s.findMatches(req.Query)
-		if len(matches) > 0 {
-			chain = append(chain, matches[0]["script_path"].(string))
+		if matches := s.findMatches(req.Query); len(matches) > 0 {
+			chain = append(chain, matches[0].scriptPath)
 		}
 	}
 
 	if len(chain) == 0 {
-		http.Error(w, "no matching scripts found", http.StatusNotFound)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]any{
+			"error":   "no matching scripts found",
+			"query":   req.Query,
+			"matches": []any{},
+		})
 		return
 	}
 
-	// Execute the chain
 	s.executeChain(w, execID, chain)
+}
+
+// executeScript runs a single script via the configured shell and returns
+// a result map containing execution_id, exit_code, stdout, stderr, and error.
+func (s *Server) executeScript(execID, scriptPath string) map[string]any {
+	cmd := exec.Command(s.cfg.Shell(), scriptPath) //nolint:gosec
+	var stdoutBuf, stderrBuf strings.Builder
+	cmd.Stdout = &stdoutBuf
+	cmd.Stderr = &stderrBuf
+
+	runErr := cmd.Run()
+	exitCode := 0
+	if cmd.ProcessState != nil {
+		exitCode = cmd.ProcessState.ExitCode()
+	}
+
+	errMsg := ""
+	if runErr != nil && exitCode == 0 {
+		errMsg = runErr.Error()
+	}
+
+	return map[string]any{
+		"execution_id": execID,
+		"exit_code":    exitCode,
+		"stdout":       stdoutBuf.String(),
+		"stderr":       stderrBuf.String(),
+		"error":        errMsg,
+	}
+}
+
+// executeChain runs a sequence of scripts, piping stdout between them.
+func (s *Server) executeChain(w http.ResponseWriter, execID string, chain []string) {
+	var results []map[string]any
+	var prevStdout string
+
+	for i, scriptPath := range chain {
+		cmd := exec.Command(s.cfg.Shell(), scriptPath) //nolint:gosec
+		if i > 0 && prevStdout != "" {
+			cmd.Stdin = strings.NewReader(prevStdout)
+		}
+		var stdoutBuf, stderrBuf strings.Builder
+		cmd.Stdout = &stdoutBuf
+		cmd.Stderr = &stderrBuf
+
+		runErr := cmd.Run()
+		exitCode := 0
+		if cmd.ProcessState != nil {
+			exitCode = cmd.ProcessState.ExitCode()
+		}
+		errMsg := ""
+		if runErr != nil && exitCode == 0 {
+			errMsg = runErr.Error()
+		}
+
+		result := map[string]any{
+			"script_path": scriptPath,
+			"exit_code":   exitCode,
+			"stdout":      stdoutBuf.String(),
+			"stderr":      stderrBuf.String(),
+			"error":       errMsg,
+		}
+		results = append(results, result)
+		prevStdout = stdoutBuf.String()
+
+		if runErr != nil {
+			break
+		}
+	}
+
+	if err := s.session.MarkExecuted(execID); err != nil {
+		log.Printf("mark executed: %v", err)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{
+		"execution_id": execID,
+		"chain":        results,
+		"final_output": prevStdout,
+	})
+}
+
+// match holds the result of a single script routing match.
+type match struct {
+	scriptPath  string
+	scriptName  string
+	description string
+	confidence  float64
+	usage       string
+}
+
+// toMatchMaps converts a slice of match to JSON-serialisable maps.
+func toMatchMaps(matches []match) []map[string]any {
+	out := make([]map[string]any, len(matches))
+	for i, m := range matches {
+		out[i] = map[string]any{
+			"script_path": m.scriptPath,
+			"script_name": m.scriptName,
+			"description": m.description,
+			"confidence":  m.confidence,
+			"usage":       m.usage,
+		}
+	}
+	return out
+}
+
+// findMatches routes a query using semantic matching if available, falling
+// back to keyword matching otherwise.
+func (s *Server) findMatches(query string) []match {
+	if s.emb != nil && s.matcher != nil {
+		return s.findMatchesSemantic(query)
+	}
+	return s.findMatchesKeyword(query)
+}
+
+// findMatchesKeyword performs substring matching against script descriptions.
+func (s *Server) findMatchesKeyword(query string) []match {
+	queryLower := strings.ToLower(query)
+	var matches []match
+	for _, path := range s.scriptPaths {
+		entry, ok := s.index.Entries[path]
+		if !ok || len(entry.Block.Commands) == 0 {
+			continue
+		}
+		cmd := entry.Block.Commands[0]
+		if strings.Contains(strings.ToLower(cmd.Description), queryLower) {
+			matches = append(matches, match{
+				scriptPath:  path,
+				scriptName:  entry.Block.Name,
+				description: cmd.Description,
+				confidence:  0.9,
+				usage:       cmd.Usage,
+			})
+		}
+	}
+	return matches
+}
+
+// findMatchesSemantic embeds the query and performs cosine similarity matching.
+// Falls back to keyword matching on error or when no embeddings are available.
+func (s *Server) findMatchesSemantic(query string) []match {
+	ctx := context.Background()
+
+	queryEmbedding, err := s.emb.Embed(ctx, query)
+	if err != nil {
+		log.Printf("embed query: %v — falling back to keyword matching", err)
+		return s.findMatchesKeyword(query)
+	}
+
+	var candidates [][]float32
+	var paths []string
+	for path, entry := range s.index.Entries {
+		if entry.Embedding != nil {
+			candidates = append(candidates, entry.Embedding)
+			paths = append(paths, path)
+		}
+	}
+	if len(candidates) == 0 {
+		return s.findMatchesKeyword(query)
+	}
+
+	results := s.matcher.FindAll(queryEmbedding, candidates)
+	matches := make([]match, 0, len(results))
+	for _, r := range results {
+		path := paths[r.Index]
+		entry := s.index.Entries[path]
+		if len(entry.Block.Commands) == 0 {
+			continue
+		}
+		cmd := entry.Block.Commands[0]
+		matches = append(matches, match{
+			scriptPath:  path,
+			scriptName:  entry.Block.Name,
+			description: cmd.Description,
+			confidence:  r.Score,
+			usage:       cmd.Usage,
+		})
+	}
+	return matches
 }

@@ -174,8 +174,9 @@ func buildConfig(raw map[string]any) (*Config, error) {
 
 	if m, ok := raw["model"].(map[string]any); ok {
 		cfg.Model = ModelConfig{
-			Path:       stringValue(m, "path"),
-			Dimensions: intValue(m, "dimensions"),
+			Path:        expandHome(stringValue(m, "path")),
+			Dimensions:  intValue(m, "dimensions"),
+			LibraryPath: expandHome(stringValue(m, "library_path")),
 		}
 	}
 

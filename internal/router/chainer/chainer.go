@@ -12,7 +12,7 @@ import (
 type Chain struct {
 	// Commands is the ordered list of commands in the chain.
 	Commands []*hashfm.Command
-	// Blocks maps command indices to their source hashfm blocks.
+	// Blocks is the ordered list of source hashfm blocks for each command.
 	Blocks []*hashfm.Block
 }
 
@@ -26,6 +26,7 @@ type ValidationError struct {
 	Reason string
 }
 
+// Error returns a human-readable description of the validation error.
 func (e *ValidationError) Error() string {
 	return fmt.Sprintf("chain validation failed between commands %d and %d: %s",
 		e.FromIndex, e.ToIndex, e.Reason)
@@ -39,62 +40,47 @@ func New() *Chainer {
 	return &Chainer{}
 }
 
-// Build validates a chain of commands and returns an executable Chain if valid.
-// Commands are validated for type compatibility: the output types of each
-// command must intersect with the input types of the next command.
+// Build validates a sequence of blocks and returns an executable Chain if all
+// adjacent type pairs are compatible. The output types of each command must
+// intersect with the input types of the next command.
 func (c *Chainer) Build(blocks []*hashfm.Block) (*Chain, error) {
 	if len(blocks) == 0 {
 		return nil, fmt.Errorf("empty command chain")
 	}
 
-	// For single commands, just validate the block has at least one command
-	if len(blocks) == 1 {
-		block := blocks[0]
+	for _, block := range blocks {
 		if len(block.Commands) == 0 {
-			return nil, fmt.Errorf("block has no commands")
+			return nil, fmt.Errorf("block %q has no commands", block.Name)
 		}
-		return &Chain{
-			Commands: block.Commands,
-			Blocks:   blocks,
-		}, nil
 	}
 
-	// For chained commands, validate type compatibility
 	chain := &Chain{
-		Blocks: blocks,
+		Blocks:   blocks,
+		Commands: make([]*hashfm.Command, 0, len(blocks)),
 	}
 
-	for i := 0; i < len(blocks)-1; i++ {
-		from := blocks[i]
-		to := blocks[i+1]
-
-		// Get the primary command from each block (first command for multi-command)
-		fromCmd := from.Commands[0]
-		toCmd := to.Commands[0]
-
-		if err := validateTypeCompatibility(&fromCmd, &toCmd, i, i+1); err != nil {
-			return nil, err
+	for i, block := range blocks {
+		cmd := &block.Commands[0]
+		if i > 0 {
+			prev := &blocks[i-1].Commands[0]
+			if err := validateTypeCompatibility(prev, cmd, i-1, i); err != nil {
+				return nil, err
+			}
 		}
-
-		chain.Commands = append(chain.Commands, &fromCmd)
+		chain.Commands = append(chain.Commands, cmd)
 	}
-
-	// Add the last command
-	lastCmd := blocks[len(blocks)-1].Commands[0]
-	chain.Commands = append(chain.Commands, &lastCmd)
 
 	return chain, nil
 }
 
-// validateTypeCompatibility checks if the output types of the upstream command
-// intersect with the input types of the downstream command.
+// validateTypeCompatibility checks that the output types of the upstream
+// command intersect with the input types of the downstream command.
+// If either command omits type declarations, validation is skipped.
 func validateTypeCompatibility(from, to *hashfm.Command, fromIdx, toIdx int) error {
-	// If either command doesn't declare types, skip validation
 	if from.Type == nil || to.Type == nil {
 		return nil
 	}
 
-	// If from has no output or to has no input, they can't be chained
 	if len(from.Type.Output) == 0 || len(to.Type.Input) == 0 {
 		return &ValidationError{
 			FromIndex: fromIdx,
@@ -103,12 +89,11 @@ func validateTypeCompatibility(from, to *hashfm.Command, fromIdx, toIdx int) err
 		}
 	}
 
-	// Check if there's an intersection between from's output and to's input
 	if !hasIntersection(from.Type.Output, to.Type.Input) {
 		return &ValidationError{
 			FromIndex: fromIdx,
 			ToIndex:   toIdx,
-			Reason:    fmt.Sprintf("type mismatch: %v output doesn't intersect with %v input",
+			Reason: fmt.Sprintf("type mismatch: %v output doesn't intersect with %v input",
 				from.Type.Output, to.Type.Input),
 		}
 	}
@@ -116,7 +101,7 @@ func validateTypeCompatibility(from, to *hashfm.Command, fromIdx, toIdx int) err
 	return nil
 }
 
-// hasIntersection checks if two type category slices have any common elements.
+// hasIntersection reports whether two type category slices share any element.
 func hasIntersection(a, b []hashfm.TypeCategory) bool {
 	for _, x := range a {
 		for _, y := range b {

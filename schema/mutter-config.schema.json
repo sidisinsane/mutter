@@ -55,6 +55,11 @@
           "description": "Expected output dimensionality of the embedding model. Validated at startup — a mismatch is a hard error. Must match the model at the configured path.",
           "type": "integer",
           "minimum": 1
+        },
+        "library_path": {
+          "title": "Library Path",
+          "description": "Absolute path to the onnxruntime shared library (.dylib on macOS, .so on Linux). Must match the version required by onnxruntime_go — currently v1.20.0. Supports ~ expansion.",
+          "type": "string"
         }
       }
     },

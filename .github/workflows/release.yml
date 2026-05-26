@@ -44,10 +44,10 @@ jobs:
         with:
           go-version: 1.26.3
 
-      # - name: Run tests
-      #   run: go test ./...
-      #   env:
-      #     GOPROXY: "https://proxy.golang.org,direct"
+      - name: Run tests
+        run: go test ./...
+        env:
+          GOPROXY: "https://proxy.golang.org,direct"
 
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v7
