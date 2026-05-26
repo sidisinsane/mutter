@@ -17,8 +17,8 @@ builds:
       - linux
       - darwin
     goarch:
-      - arm64
       - amd64
+      - arm64
 
   # mutter: TUI binary — primary end-user experience.
   # Uncomment when cmd/mutter is implemented.

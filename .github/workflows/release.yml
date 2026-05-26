@@ -1,12 +1,12 @@
 # GoReleaser release workflow — triggers on version tag push (v*).
 #
-# Uses a matrix of native runners — one per OS — because CGO_ENABLED=1
-# (required by onnxruntime_go) prevents cross-compilation. Each runner
-# builds only for its own OS. GoReleaser's split/merge mode combines
-# the artifacts into a single GitHub release.
+# CGO_ENABLED=1 is required by onnxruntime_go and prevents cross-compilation.
+# Each OS builds natively on its own runner. GGOOS filters which targets each
+# runner builds without affecting hooks or other build steps.
 #
-# The onnxruntime shared library is NOT needed on the build host —
-# it is loaded at runtime on the user's machine on first run.
+# Both jobs target the same GitHub release — the macOS job uses
+# --skip=validate to attach to the existing release rather than
+# creating a new one, and --skip=announce to avoid duplicate notifications.
 #
 # CI (ci.yml) must pass before tagging — tests are not repeated here.
 
@@ -25,12 +25,8 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build:
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-latest]
-
-    runs-on: ${{ matrix.os }}
+  release-linux:
+    runs-on: ubuntu-latest
     permissions:
       contents: write
 
@@ -50,15 +46,15 @@ jobs:
         with:
           distribution: goreleaser
           version: "~> v2"
-          args: release --clean --split
+          args: release --clean --skip=announce
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GOPROXY: "https://proxy.golang.org,direct"
-          GORELEASER_CURRENT_TAG: ${{ github.ref_name }}
+          GGOOS: linux
 
-  merge:
-    needs: build
-    runs-on: ubuntu-latest
+  release-macos:
+    runs-on: macos-latest
+    needs: release-linux
     permissions:
       contents: write
 
@@ -68,12 +64,18 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Merge and publish release
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: 1.26.3
+
+      - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v7
         with:
           distribution: goreleaser
           version: "~> v2"
-          args: continue --merge
+          args: release --skip=validate --skip=announce
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GORELEASER_CURRENT_TAG: ${{ github.ref_name }}
+          GOPROXY: "https://proxy.golang.org,direct"
+          GGOOS: darwin
