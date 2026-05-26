@@ -19,6 +19,12 @@ builds:
     goarch:
       - amd64
       - arm64
+    overrides:
+      - goos: linux
+        goarch: arm64
+        env:
+          - CGO_ENABLED=1
+          - CC=aarch64-linux-gnu-gcc
 
   # mutter: TUI binary — primary end-user experience.
   # Uncomment when cmd/mutter is implemented.

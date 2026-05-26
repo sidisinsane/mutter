@@ -4,9 +4,8 @@
 # Each OS builds natively on its own runner. GGOOS filters which targets each
 # runner builds without affecting hooks or other build steps.
 #
-# Both jobs target the same GitHub release — the macOS job uses
-# --skip=validate to attach to the existing release rather than
-# creating a new one, and --skip=announce to avoid duplicate notifications.
+# Linux arm64 cross-compilation uses gcc-aarch64-linux-gnu, available on
+# ubuntu-latest via apt. macOS builds natively for both amd64 and arm64.
 #
 # CI (ci.yml) must pass before tagging — tests are not repeated here.
 
@@ -40,6 +39,9 @@ jobs:
         uses: actions/setup-go@v6
         with:
           go-version: 1.26.3
+
+      - name: Install ARM64 cross-compiler
+        run: sudo apt-get install -y gcc-aarch64-linux-gnu
 
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v7
